@@ -4,6 +4,7 @@ import uvicorn
 from os import getenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 
@@ -14,6 +15,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+app.mount("/style", StaticFiles(directory="graffiti/style"), name="style")
 
 # Serve the API
 routes = ['auth.auth', 'db.db']
