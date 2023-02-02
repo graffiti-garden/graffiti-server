@@ -1,150 +1,84 @@
-import jsonschema
-from jsonschema.exceptions import ValidationError
+from jsonschema import Draft7Validator
 
-ALLOWED_QUERY_OPERATORS = ["elemMatch", "type", "exists", "size", "and", "not", "nor", "or", "in", "nin", "all", "eq", "ne", "gt", "lt", "lte", "gte"]
-
-# Hex representation of sha256
-SHA256_PATTERN = "[0-9a-f]{64}" # regex
-SHA256_SCHEMA = { # jsonschema
-    "type": "string",
-    "pattern": f"^{SHA256_PATTERN}$"
-}
-
-# Random user input - any reasonably sized string
-RANDOM_SCHEMA = { # jsonschema
-    "type": "string",
-    "pattern": "^.{1,64}$"
-}
-
-# Anything not starting with a "_" or a "$" or containing periods
-OBJECT_PROPERTY_PATTERN = "^(?!_|\$)[^\.]*$"
-
-# Anything not starting with a "$"
-QUERY_VALUE_PROPERTY_PATTERN = "^(?!\$).*$"
-
-ARRAY_OF_PATH_GROUPS = {
-    "type": "array",
-    "uniqueItems": True,
-    "minItems": 1,
-    "items": {
-        "oneOf": [ {
-                "type": "string",
-                "pattern": QUERY_VALUE_PROPERTY_PATTERN
-        }, {
-            "type": "array",
-            "uniqueItems": True,
-            "minItems": 2,
-            "items": { 
-                "type": "string",
-                "pattern": QUERY_VALUE_PROPERTY_PATTERN
-            }
-        } ]
-    }
-}
-
-SOCKET_SCHEMA = {
+schema = {
     "type": "object",
     "properties": {
-        "messageID": RANDOM_SCHEMA,
-        "object": { "$ref": "#/definitions/object" },
-        "query": { "$ref": "#/definitions/query" },
-        "objectID": RANDOM_SCHEMA,
-        "since": { "oneOf": [{
-                "type": "string",
-                # A mongo object ID
-                "pattern": "^([a-f\d]{24})$"
-            }, { "type": "null" }]
-        },
-        "queryID": RANDOM_SCHEMA,
+        "messageID": { "$ref": "#/definitions/objectKey" },
+        "update": { "$ref": "#/definitions/object" },
+        "remove": { "$ref": "#/definitions/objectKey" },
+        "subscribe": { "$ref": "#/definitions/tags" },
+        "unsubscribe": { "$ref": "#/definitions/tags" },
+        "get": { "$ref": "#/definitions/userIDAndObjectKey" },
+        "ls": { "type": "null" }
     },
     "additionalProperties": False,
-    "anyOf": [
-        # UPDATE
-        { "required": ["messageID", "object", "query"] },
-        # SUBSCRIBE
-        { "required": ["messageID", "query", "since", "queryID"] },
-        # UNSUBSCRIBE
-        { "required": ["messageID", "queryID"] },
-        # DELETE
-        { "required": ["messageID", "objectID"] },
+    "oneOf": [
+        { "required": ["messageID", x] } for x in \
+        ["update", "remove", "subscribe", "unsubscribe", "get", "ls"]
     ],
     "definitions": {
         "object": {
             "type": "object",
-            "additionalProperties": False,
-            "patternProperties": {
-                OBJECT_PROPERTY_PATTERN: { "$ref": "#/definitions/objectValues" }
-            },
-            "required": ["_id", "_by"],
             "properties": {
-                "_by": SHA256_SCHEMA,
-                "_id": RANDOM_SCHEMA,
+                "_by": { "$ref": "#/definitions/userID" },
+                "_key": { "$ref": "#/definitions/objectKey" },
+                "_tags": { "$ref": "#/definitions/tags" },
                 "_to": {
                     "uniqueItems": True,
                     "type": "array",
-                    "items": SHA256_SCHEMA
+                    "items": { "$ref": "#/definitions/userID" },
                 },
-                "_inContextIf": {
-                    "type": "array",
-                    "uniqueItems": True,
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "properties": {
-                            "_queryFailsWithout": ARRAY_OF_PATH_GROUPS,
-                            "_queryPassesWithout": ARRAY_OF_PATH_GROUPS
-                        },
-                        "anyOf": [
-                            { "required": ["_queryFailsWithout"] },
-                            { "required": ["_queryPassesWithout"] },
-                        ]
-                    }
-                }
-            }
-        },
-        "objectValues": { "oneOf": [
-            { "type": "object",
-                "additionalProperties": False,
-                "patternProperties": {
-                    OBJECT_PROPERTY_PATTERN: { "$ref": "#/definitions/objectValues" }
-                }
             },
-            { "type": "array",
-                "items": { "$ref": "#/definitions/objectValues" }
-            },
-            { "type": ["string", "number", "boolean", "null"] }
-        ]},
-        "query": {
-            "type": "object",
-            "additionalProperties": False,
             "patternProperties": {
-                # Anything not starting with a "$"
-                QUERY_VALUE_PROPERTY_PATTERN: { "$ref": "#/definitions/queryValue" }
+                # Anything not starting with an underscore is OK
+                "^(?!_).*$": True
             },
-            # To must be a SHA
-            "properties": {
-                "_audit": { "type": "boolean" }
-            } |
-            # And allowed query types recurse
-                { '$' + o: { "$ref": "#/definitions/queryValue" }
-                    for o in ALLOWED_QUERY_OPERATORS }
+            "required": ["_key", "_by", "_tags"],
+            "additionalProperties": False
         },
-        "queryValue": { "oneOf": [
-            { "$ref": "#/definitions/query" },
-            { "type": "array",
-                "items": { "$ref": "#/definitions/queryValue" }
+        "userID": {
+            # A SHA256 String
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "objectKey": {
+            # Unstructured user input - any reasonably sized string
+            "type": "string",
+            "pattern": "^.{1,64}$"
+        },
+        "tags": {
+            "type": "array",
+            "uniqueItems": True,
+            "minItems": 1,
+            "items": { "type": "string" }
+        },
+        "userIDAndObjectKey": {
+            "type": "object",
+            "properties": {
+                "_by": { "$ref": "#/definitions/userID" },
+                "_key": { "$ref": "#/definitions/objectKey" },
             },
-            { "type": ["string", "number", "boolean", "null"] }
-        ] }
-    }}
+            "additionalProperties": False,
+            "required": ["_key", "_by"]
+        }
+    }
+}
 
-# Initialize the scheme validator and owner checker
-VALIDATOR = jsonschema.Draft7Validator(SOCKET_SCHEMA)
+validator = Draft7Validator(schema)
+validate = lambda msg: validator.validate(msg)
 
-def validate(msg, owner_id):
-    VALIDATOR.validate(msg)
-
-    if 'object' in msg:
-        if msg['object']['_by'] != owner_id:
-            raise ValidationError("you can only create objects _by yourself")
+def query_access(owner_id):
+    return { "$or": [
+        {
+            # The object is public
+            "_to": { "$exists": False },
+        }, {
+            # The object is private
+            "_to": { "$exists": True },
+            # The owner is the recipient or sender
+            "$or": [
+                { "_to": owner_id },
+                { "_by": owner_id }
+            ]
+        }
+    ]}

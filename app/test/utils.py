@@ -2,6 +2,7 @@ import jwt
 import json
 import string
 import random
+import asyncio
 from hashlib import sha256
 from os import getenv
 import websockets
@@ -14,8 +15,9 @@ def random_sha():
 
 def object_base(owner_id, proof=None):
     object_base = {
-        '_id': random_id(),
+        '_key': random_id(),
         '_by': owner_id,
+        '_tags': ['something']
     }
     return object_base
 
@@ -39,3 +41,14 @@ async def send(ws, j):
 
 async def recv(ws):
     return json.loads(await ws.recv())
+
+
+async def another_message(ws, recv=recv):
+    try:
+        async with asyncio.timeout(0.1):
+            result = await recv(ws)
+            print(result)
+    except TimeoutError:
+        return False
+    else:
+        return True
